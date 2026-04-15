@@ -28,6 +28,12 @@ func main() {
 		}
 	}()
 
+	// Subcommand mode: `knv version` should print only the version.
+	if len(os.Args) > 1 && os.Args[1] == "version" {
+		fmt.Printf("knv %s\n", version)
+		return
+	}
+
 	useMock := flag.Bool("mock", false, "use mock data instead of a live cluster")
 	kubeconfig := flag.String("kubeconfig", "", "path to kubeconfig file (default: $KUBECONFIG or ~/.kube/config)")
 	kubeCtx := flag.String("context", "", "kubernetes context name to use (default: current-context)")
@@ -38,10 +44,13 @@ func main() {
 	debugNS := flag.String("debug-namespace", "", "namespace for kubectl debug pods (default: server default)")
 	output := flag.String("output", "", "non-TUI output mode: json or table (exits after printing)")
 	debugLog := flag.String("debug", "", "write debug log to this file path")
+	showVersion := flag.Bool("version", false, "print knv version and exit")
 
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "knv %s — Kubernetes Node Viewer\n\n", version)
-		fmt.Fprintf(os.Stderr, "Usage: knv [flags]\n\n")
+		fmt.Fprintf(os.Stderr, "Usage:\n")
+		fmt.Fprintf(os.Stderr, "  knv [flags]\n")
+		fmt.Fprintf(os.Stderr, "  knv version\n\n")
 		fmt.Fprintf(os.Stderr, "Flags:\n")
 		flag.PrintDefaults()
 		fmt.Fprintf(os.Stderr, `
@@ -81,6 +90,11 @@ Keybindings:
 	}
 
 	flag.Parse()
+
+	if *showVersion {
+		fmt.Printf("knv %s\n", version)
+		return
+	}
 
 	// ── Color profile ─────────────────────────────────────────────────────────
 	if *noColor {

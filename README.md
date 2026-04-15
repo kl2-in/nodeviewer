@@ -1,6 +1,6 @@
 # knv — Kubernetes Node Viewer
 
-A fast, keyboard-driven terminal UI for monitoring and operating Kubernetes nodes.
+A fast, keyboard-driven, Karpenter-aware terminal UI for monitoring and operating Kubernetes nodes.
 
 ```
 ip-10-0-1-100.ec2.internal▲  Ready                       workers-prod       45d  on-demand  Eligible    m5.xlarge     us-east-1a    v1.27.3  ████████░░  62%  ████████░░  75%  18/110
@@ -68,6 +68,9 @@ knv -refresh 5
 
 # Run with mock data (no cluster needed)
 knv -mock
+
+# Print knv version
+knv version
 ```
 
 ### Non-TUI output
@@ -88,6 +91,7 @@ knv -output table
 | `-kubeconfig` | `$KUBECONFIG` or `~/.kube/config` | Path to kubeconfig file |
 | `-refresh` | `30` | Interval in seconds between event/metrics refreshes (min 5); node and pod data is watch-based |
 | `-output` | — | Non-TUI mode: `json` or `table` |
+| `-version` | false | Print knv version and exit |
 | `-debug-image` | `nicolaka/netshoot` | Image for `kubectl debug` node sessions |
 | `-debug-namespace` | server default | Namespace for debug pods |
 | `-no-color` | false | Disable ANSI colour output |
