@@ -12,7 +12,7 @@ ip-10-0-2-175.ec2.internal   Unknown                     workers-spot        1d 
 
 ## Features
 
-- **Live cluster data** — nodes, pods, events, and metrics from any kubeconfig context
+- **Live cluster data** — nodes and pods are watch-based (informer cache, no polling); events and metrics are fetched on each refresh interval
 - **Inspect panel** — full node detail: conditions, taints, labels, pods, events, network, resources
 - **Node operations** — exec into nodes, cordon/uncordon, drain (with PDB support)
 - **Karpenter-aware** — shows real-time NodeClaim status (Consolidatable/Drifted/Disrupting/Blocked/lifecycle states)
@@ -86,7 +86,7 @@ knv -output table
 |---|---|---|
 | `-context` | current-context | Kubernetes context name |
 | `-kubeconfig` | `$KUBECONFIG` or `~/.kube/config` | Path to kubeconfig file |
-| `-refresh` | `30` | Refresh interval in seconds (min 5) |
+| `-refresh` | `30` | Interval in seconds between event/metrics refreshes (min 5); node and pod data is watch-based |
 | `-output` | — | Non-TUI mode: `json` or `table` |
 | `-debug-image` | `nicolaka/netshoot` | Image for `kubectl debug` node sessions |
 | `-debug-namespace` | server default | Namespace for debug pods |

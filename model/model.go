@@ -267,7 +267,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.applyFilter()
 				m.mutateErrMsg = ""
 			case "r":
-				return m, nil
+				return m, m.fetchCmd()
 			case "s":
 				sortKeys := []string{"", "name", "status", "group", "cpu", "mem", "age", "pods"}
 				next := 0
@@ -421,6 +421,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "ctrl+c":
 				return m, tea.Quit
 			case "y", "Y":
+				if len(m.filtered) == 0 {
+					m.state = m.prevState
+					break
+				}
 				return m, m.nodeExecCmd()
 			case "n", "N", "esc":
 				m.state = m.prevState
@@ -432,6 +436,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "ctrl+c":
 				return m, tea.Quit
 			case "y", "Y":
+				if len(m.filtered) == 0 {
+					m.state = m.prevState
+					break
+				}
 				return m, m.mutateCmd()
 			case "n", "N", "esc":
 				m.state = m.prevState
@@ -443,6 +451,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "ctrl+c":
 				return m, tea.Quit
 			case "y", "Y":
+				if len(m.filtered) == 0 {
+					m.state = m.prevState
+					break
+				}
 				m.state = viewList
 				m.mutateErrMsg = ""
 				return m, m.mutateCmd()
@@ -687,7 +699,7 @@ func (m Model) mutateCmd() tea.Cmd {
 	action := m.confirmAction
 	mutator := m.mutator
 	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 		defer cancel()
 		var err error
 		switch action {

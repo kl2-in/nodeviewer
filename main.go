@@ -90,7 +90,7 @@ Keybindings:
 	// ── Debug log ─────────────────────────────────────────────────────────────
 	var logger *log.Logger
 	if *debugLog != "" {
-		f, err := os.OpenFile(*debugLog, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+		f, err := os.OpenFile(*debugLog, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "warning: cannot open debug log %s: %v\n", *debugLog, err)
 		} else {
@@ -115,6 +115,7 @@ Keybindings:
 			if err := client.Start(context.Background()); err != nil {
 				fmt.Fprintf(os.Stderr, "warning: informer cache sync failed (%v) — data may be incomplete\n", err)
 			}
+			defer client.Stop()
 			loader = client
 		}
 	}
