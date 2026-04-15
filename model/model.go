@@ -82,6 +82,7 @@ type Model struct {
 
 	cursor     int
 	listOffset int // viewport scroll offset for the node list
+	tableXOff  int // horizontal table scroll offset
 	ready      bool
 	state      viewState
 	prevState  viewState // state to return after overlay is dismissed
@@ -145,6 +146,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.termWidth = msg.Width
 		m.termHeight = msg.Height
+		m.clampTableOffset()
 		if m.state == viewInspect {
 			m.inspectLines = m.buildInspectLines()
 		}
@@ -204,7 +206,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case viewList:
 				switch {
 				case msg.Y == 0: // header row — click to sort
-					if key := ui.SortKeyAtX(msg.X, m.termWidth); key != "" {
+					if key := ui.SortKeyAtX(msg.X, m.termWidth, m.tableXOff); key != "" {
 						if key == m.sortKey {
 							m.sortAsc = !m.sortAsc
 						} else {
@@ -240,6 +242,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.cursor++
 					m.ensureVisible()
 				}
+			case "left":
+				if m.tableXOff > 0 {
+					m.tableXOff--
+				}
+			case "right":
+				m.tableXOff++
+				m.clampTableOffset()
 			case "g":
 				m.cursor = 0
 				m.listOffset = 0
@@ -550,14 +559,18 @@ func (m Model) renderList() string {
 		localCursor = 0
 	}
 
-	table := ui.RenderTable(rows, localCursor, m.termWidth, m.sortKey, m.sortAsc)
+	table := ui.RenderTable(rows, localCursor, m.termWidth, m.sortKey, m.sortAsc, m.tableXOff)
 	filterBar := ui.RenderFilterBar(m.filter, m.state == viewFilter)
 	statusBar := m.renderStatusBar()
 
 	scrollInd := ui.ScrollIndicator(m.listOffset, vis, len(m.filtered))
-	helpKeys := "  ↑↓/j/k navigate   enter inspect   P pods   e exec   c cordon   d drain   y copy   / filter   s sort   ? help   q quit"
+	horizInd := ui.HorizontalIndicator(m.tableXOff, m.termWidth)
+	helpKeys := "  ↑↓/j/k navigate   ←/→ next cols   enter inspect   P pods   e exec   c cordon   d drain   y copy   / filter   s sort   ? help   q quit"
 	if scrollInd != "" {
 		helpKeys = helpKeys + "  " + scrollInd
+	}
+	if horizInd != "" {
+		helpKeys = helpKeys + "  " + horizInd
 	}
 	help := ui.HelpStyle.Render(helpKeys)
 
@@ -843,6 +856,16 @@ func (m *Model) ensureVisible() {
 	}
 	if m.listOffset < 0 {
 		m.listOffset = 0
+	}
+}
+
+func (m *Model) clampTableOffset() {
+	max := ui.MaxHorizontalOffset(m.termWidth)
+	if m.tableXOff > max {
+		m.tableXOff = max
+	}
+	if m.tableXOff < 0 {
+		m.tableXOff = 0
 	}
 }
 

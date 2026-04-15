@@ -44,8 +44,8 @@ func TestBuildColumns_nameWidthCapped(t *testing.T) {
 }
 
 func TestBuildColumns_nameGrows(t *testing.T) {
-	// At 120 chars NAME should be wider than its base 30
-	cols := buildColumns(120)
+	// At wide widths NAME should absorb extra space beyond its base 30.
+	cols := buildColumns(250)
 	var nameWidth int
 	for _, c := range cols {
 		if c.title == "NAME" {
@@ -54,22 +54,14 @@ func TestBuildColumns_nameGrows(t *testing.T) {
 		}
 	}
 	if nameWidth <= 30 {
-		t.Errorf("NAME column at 120 width = %d, expected > 30", nameWidth)
+		t.Errorf("NAME column at 250 width = %d, expected > 30", nameWidth)
 	}
 }
 
-func TestBuildColumns_totalFitsTerminal(t *testing.T) {
+func TestTableWidth_matchesViewport(t *testing.T) {
 	for _, w := range []int{80, 120, 160, 200, 250} {
-		cols := buildColumns(w)
-		total := 0
-		for i, c := range cols {
-			total += c.width
-			if i < len(cols)-1 {
-				total++ // separator
-			}
-		}
-		if total > w {
-			t.Errorf("buildColumns(%d): total width %d exceeds terminal", w, total)
+		if got := TableWidth(w); got != w {
+			t.Errorf("TableWidth(%d) = %d, want %d", w, got, w)
 		}
 	}
 }
@@ -78,17 +70,17 @@ func TestBuildColumns_totalFitsTerminal(t *testing.T) {
 
 func TestSortKeyAtX_name(t *testing.T) {
 	// X=0 should always land on NAME column
-	got := SortKeyAtX(0, 160)
+	got := SortKeyAtX(0, 160, 0)
 	if got != "name" {
-		t.Errorf("SortKeyAtX(0, 160) = %q, want name", got)
+		t.Errorf("SortKeyAtX(0, 160, 0) = %q, want name", got)
 	}
 }
 
 func TestSortKeyAtX_beyondTable(t *testing.T) {
 	// X beyond all columns → empty string
-	got := SortKeyAtX(10000, 160)
+	got := SortKeyAtX(10000, 160, 0)
 	if got != "" {
-		t.Errorf("SortKeyAtX(10000) = %q, want empty", got)
+		t.Errorf("SortKeyAtX(10000, 160, 0) = %q, want empty", got)
 	}
 }
 
@@ -98,7 +90,7 @@ func TestSortKeyAtX_nonSortableColumn(t *testing.T) {
 	x := 0
 	for i, c := range cols {
 		if c.title == "INSTANCE" {
-			got := SortKeyAtX(x+1, 160)
+			got := SortKeyAtX(x+1, 160, 0)
 			if got != "" {
 				t.Errorf("SortKeyAtX on INSTANCE col = %q, want empty", got)
 			}
@@ -148,6 +140,41 @@ func TestScrollIndicator_empty(t *testing.T) {
 	got := ScrollIndicator(0, 10, 0)
 	if got != "" {
 		t.Errorf("ScrollIndicator empty = %q, want empty", got)
+	}
+}
+
+func TestHorizontalIndicator_showsRangeWhenClipped(t *testing.T) {
+	got := HorizontalIndicator(1, 80)
+	if !strings.Contains(got, "cols:") {
+		t.Errorf("HorizontalIndicator(1,80) = %q, want range indicator", got)
+	}
+}
+
+func TestMaxHorizontalOffset_nonNegative(t *testing.T) {
+	if got := MaxHorizontalOffset(120); got < 0 {
+		t.Errorf("MaxHorizontalOffset(120) = %d, want >= 0", got)
+	}
+}
+
+func TestRenderTable_keepsPrimaryColumnsVisible(t *testing.T) {
+	rows := []NodeRow{{
+		Name:      "node-1",
+		Status:    "Ready",
+		NodeGroup: "workers",
+		Age:       "10m",
+	}}
+	out := RenderTable(rows, 0, 90, "", true, 1)
+	if !strings.Contains(out, "NAME") {
+		t.Fatalf("expected NAME header to remain visible, got %q", out)
+	}
+	if !strings.Contains(out, "STATUS") {
+		t.Fatalf("expected STATUS header to remain visible, got %q", out)
+	}
+	if !strings.Contains(out, "node-1") {
+		t.Fatalf("expected node name to remain visible, got %q", out)
+	}
+	if !strings.Contains(out, "Ready") {
+		t.Fatalf("expected status to remain visible, got %q", out)
 	}
 }
 

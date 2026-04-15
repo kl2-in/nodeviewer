@@ -99,9 +99,8 @@ type colLayout struct {
 	flex bool // can absorb extra space
 }
 
-// baseColumns defines the priority-ordered column layout.
+// baseColumns defines the full table layout.
 // Fixed columns have exact widths; flex columns share leftover space.
-// Columns are dropped right-to-left when the terminal is too narrow.
 func buildColumns(termWidth int) []colDef {
 	all := []colLayout{
 		{colDef{"NAME", 30}, true},
@@ -117,16 +116,6 @@ func buildColumns(termWidth int) []colDef {
 		{colDef{"CPU %", 13}, false}, // 8-char bar + " " + " 62%"
 		{colDef{"MEM %", 13}, false},
 		{colDef{"PODS", 7}, false},
-	}
-
-	// Try to fit all columns; drop rightmost non-essential ones if too narrow
-	for len(all) > 3 {
-		total := calcWidth(all)
-		if total <= termWidth {
-			break
-		}
-		// Drop the last non-essential column
-		all = all[:len(all)-1]
 	}
 
 	// Distribute any remaining space to flex columns (NAME), capped at 45 chars.
@@ -159,15 +148,7 @@ func buildColumns(termWidth int) []colDef {
 // TableWidth returns the actual rendered width of the table for a given terminal width.
 // Use this instead of termWidth when sizing elements that must align with the table.
 func TableWidth(termWidth int) int {
-	cols := buildColumns(termWidth)
-	w := 0
-	for i, c := range cols {
-		w += c.width
-		if i < len(cols)-1 {
-			w++
-		}
-	}
-	return w
+	return termWidth
 }
 
 func calcWidth(cols []colLayout) int {
@@ -183,15 +164,15 @@ func calcWidth(cols []colLayout) int {
 
 // ─── Table ───────────────────────────────────────────────────────────────────
 
-// SortKeyAtX returns the sort key for whichever column the cursor x falls in, or "".
-func SortKeyAtX(x, termWidth int) string {
-	cols := buildColumns(termWidth)
+// SortKeyAtX returns the sort key for whichever visible column the cursor x falls in, or "".
+func SortKeyAtX(x, termWidth int, xOffset int) string {
+	selection := selectVisibleColumns(buildColumns(termWidth), termWidth, xOffset)
 	pos := 0
-	for _, c := range cols {
+	for _, c := range selection.cols {
 		if x >= pos && x < pos+c.width {
 			return sortKeyForTitle(c.title)
 		}
-		pos += c.width + 1 // +1 for the space separator between columns
+		pos += c.width + 1
 	}
 	return ""
 }
@@ -238,8 +219,9 @@ func sortKeyToTitle(sortKey string) string {
 	return ""
 }
 
-func RenderTable(rows []NodeRow, cursor int, termWidth int, sortKey string, sortAsc bool) string {
-	cols := buildColumns(termWidth)
+func RenderTable(rows []NodeRow, cursor int, termWidth int, sortKey string, sortAsc bool, xOffset int) string {
+	selection := selectVisibleColumns(buildColumns(termWidth), termWidth, xOffset)
+	visibleCols := selection.cols
 	var sb strings.Builder
 
 	// Header
@@ -249,8 +231,8 @@ func RenderTable(rows []NodeRow, cursor int, termWidth int, sortKey string, sort
 		sortDir = "▼"
 	}
 
-	hdrs := make([]string, len(cols))
-	for i, c := range cols {
+	hdrs := make([]string, len(visibleCols))
+	for i, c := range visibleCols {
 		title := c.title
 		if sortKey != "" && c.title == sortColTitle {
 			// Append indicator to (possibly truncated) title — always visible.
@@ -267,13 +249,14 @@ func RenderTable(rows []NodeRow, cursor int, termWidth int, sortKey string, sort
 
 	// Divider
 	tw := 0
-	for i, c := range cols {
+	for i, c := range visibleCols {
 		tw += c.width
-		if i < len(cols)-1 {
+		if i < len(visibleCols)-1 {
 			tw++
 		}
 	}
-	sb.WriteString(DimStyle.Render(strings.Repeat("─", tw)) + "\n")
+	divider := DimStyle.Render(strings.Repeat("─", tw))
+	sb.WriteString(divider + "\n")
 
 	if len(rows) == 0 {
 		sb.WriteString("  " + DimStyle.Render("No nodes match filter") + "\n")
@@ -281,9 +264,106 @@ func RenderTable(rows []NodeRow, cursor int, termWidth int, sortKey string, sort
 	}
 
 	for i, row := range rows {
-		sb.WriteString(renderRow(row, i == cursor, cols) + "\n")
+		sb.WriteString(renderRow(row, i == cursor, visibleCols) + "\n")
 	}
 	return sb.String()
+}
+
+type visibleColumnSelection struct {
+	cols            []colDef
+	pinnedCount     int
+	scrollStart     int
+	scrollEnd       int
+	totalScrollable int
+	maxOffset       int
+}
+
+// MaxHorizontalOffset returns the right-most column page offset.
+func MaxHorizontalOffset(termWidth int) int {
+	selection := selectVisibleColumns(buildColumns(termWidth), termWidth, 0)
+	return selection.maxOffset
+}
+
+func selectVisibleColumns(allCols []colDef, termWidth int, offset int) visibleColumnSelection {
+	selection := visibleColumnSelection{}
+	if termWidth <= 0 || len(allCols) == 0 {
+		return selection
+	}
+
+	totalWidth := 0
+	for i, c := range allCols {
+		totalWidth += c.width
+		if i < len(allCols)-1 {
+			totalWidth++
+		}
+	}
+	if totalWidth <= termWidth {
+		selection.cols = append(selection.cols, allCols...)
+		selection.scrollEnd = len(allCols) - 1
+		return selection
+	}
+
+	used := 0
+	for i := 0; i < len(allCols) && i < 2; i++ {
+		needed := allCols[i].width
+		if len(selection.cols) > 0 {
+			needed++
+		}
+		if used+needed > termWidth {
+			break
+		}
+		selection.cols = append(selection.cols, allCols[i])
+		selection.pinnedCount++
+		used += needed
+	}
+
+	scrollable := allCols[selection.pinnedCount:]
+	selection.totalScrollable = len(scrollable)
+	if len(scrollable) == 0 {
+		selection.scrollEnd = len(selection.cols) - 1
+		return selection
+	}
+	selection.maxOffset = len(scrollable) - 1
+	if offset < 0 {
+		offset = 0
+	}
+	if offset > selection.maxOffset {
+		offset = selection.maxOffset
+	}
+	selection.scrollStart = offset
+	selection.scrollEnd = offset - 1
+
+	for i := offset; i < len(scrollable); i++ {
+		needed := scrollable[i].width
+		if len(selection.cols) > 0 {
+			needed++
+		}
+		if used+needed > termWidth {
+			break
+		}
+		selection.cols = append(selection.cols, scrollable[i])
+		used += needed
+		selection.scrollEnd = i
+	}
+
+	if selection.scrollEnd < selection.scrollStart {
+		selection.scrollEnd = selection.scrollStart
+	}
+	return selection
+}
+
+// HorizontalIndicator shows the current visible scrollable column range, or empty when all fit.
+func HorizontalIndicator(xOffset, termWidth int) string {
+	selection := selectVisibleColumns(buildColumns(termWidth), termWidth, xOffset)
+	if selection.maxOffset == 0 || selection.totalScrollable == 0 {
+		return ""
+	}
+	start := selection.scrollStart + 1
+	end := selection.scrollEnd + 1
+	if end < start {
+		end = start
+	}
+	return DimStyle.Render(fmt.Sprintf("[cols:%d-%d/%d]", start, end, selection.totalScrollable))
 }
 
 // colIndex returns the index of the column with the given title, or -1.
