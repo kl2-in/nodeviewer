@@ -1,0 +1,163 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build & Publish Release
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+            suffix: linux-amd64
+          - goos: linux
+            goarch: arm64
+            suffix: linux-arm64
+          - goos: darwin
+            goarch: amd64
+            suffix: darwin-amd64
+          - goos: darwin
+            goarch: arm64
+            suffix: darwin-arm64
+          - goos: windows
+            goarch: amd64
+            suffix: windows-amd64
+            ext: .exe
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # full history needed for release notes
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Test
+        run: go test -race -count=1 ./...
+
+      - name: Build
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: 0
+        run: |
+          VERSION=${GITHUB_REF_NAME}
+          BINARY=knv-${{ matrix.suffix }}${{ matrix.ext }}
+          go build \
+            -ldflags "-X main.version=${VERSION} -s -w" \
+            -o "${BINARY}" \
+            .
+          # Create archive
+          if [ "${{ matrix.goos }}" = "windows" ]; then
+            zip "knv-${{ matrix.suffix }}.zip" "${BINARY}"
+          else
+            tar czf "knv-${{ matrix.suffix }}.tar.gz" "${BINARY}"
+          fi
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: knv-${{ matrix.suffix }}
+          path: |
+            knv-${{ matrix.suffix }}.tar.gz
+            knv-${{ matrix.suffix }}.zip
+          if-no-files-found: ignore
+          retention-days: 1
+
+  publish:
+    name: Publish GitHub Release
+    runs-on: ubuntu-latest
+    needs: release
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist/
+          merge-multiple: true
+
+      - name: Generate checksums
+        working-directory: dist
+        run: sha256sum * > checksums.txt
+
+      - name: Generate release notes
+        id: notes
+        run: |
+          VERSION=${GITHUB_REF_NAME}
+
+          # Find the previous tag to compute the commit range
+          PREV_TAG=$(git tag --sort=-version:refname | grep -v "^${VERSION}$" | head -1)
+
+          if [ -z "$PREV_TAG" ]; then
+            RANGE="HEAD"
+          else
+            RANGE="${PREV_TAG}..HEAD"
+          fi
+
+          # Build release notes from commit log
+          {
+            echo "## What's Changed"
+            echo ""
+
+            # Features
+            FEATURES=$(git log ${RANGE} --pretty=format:"- %s (%h)" --no-merges | grep -iE '^- (feat|add|new):' | sed 's/^- feat:/- /;s/^- add:/- /;s/^- new:/- /')
+            if [ -n "$FEATURES" ]; then
+              echo "### Features"
+              echo "$FEATURES"
+              echo ""
+            fi
+
+            # Fixes
+            FIXES=$(git log ${RANGE} --pretty=format:"- %s (%h)" --no-merges | grep -iE '^- (fix|bug):' | sed 's/^- fix:/- /;s/^- bug:/- /')
+            if [ -n "$FIXES" ]; then
+              echo "### Bug Fixes"
+              echo "$FIXES"
+              echo ""
+            fi
+
+            # All other commits
+            OTHER=$(git log ${RANGE} --pretty=format:"- %s (%h)" --no-merges | grep -ivE '^- (feat|add|new|fix|bug):')
+            if [ -n "$OTHER" ]; then
+              echo "### Other Changes"
+              echo "$OTHER"
+              echo ""
+            fi
+
+            echo "---"
+            echo ""
+            if [ -n "$PREV_TAG" ]; then
+              echo "**Full diff:** [\`${PREV_TAG}..${VERSION}\`](https://github.com/${{ github.repository }}/compare/${PREV_TAG}...${VERSION})"
+            fi
+          } > release_notes.md
+
+          cat release_notes.md
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "knv ${{ github.ref_name }}"
+          body_path: release_notes.md
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          files: |
+            dist/*.tar.gz
+            dist/*.zip
+            dist/checksums.txt
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

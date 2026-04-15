@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    name: Test & Lint
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Verify dependencies
+        run: go mod verify
+
+      - name: Check formatting
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "The following files are not gofmt'd:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test -race -count=1 ./...
+
+      - name: Build (all platforms)
+        run: |
+          GOOS=linux   GOARCH=amd64  go build -o /dev/null .
+          GOOS=linux   GOARCH=arm64  go build -o /dev/null .
+          GOOS=darwin  GOARCH=amd64  go build -o /dev/null .
+          GOOS=darwin  GOARCH=arm64  go build -o /dev/null .
+          GOOS=windows GOARCH=amd64  go build -o /dev/null .
